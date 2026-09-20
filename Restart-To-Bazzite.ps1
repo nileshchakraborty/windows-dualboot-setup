@@ -1,27 +1,29 @@
-# Find Bazzite entry dynamically from UEFI firmware
-$firmware = cmd /c "bcdedit /enum firmware"
-$bazzite = $null
-$current = $null
+<#
+.SYNOPSIS
+    Boots into Bazzite for a single session, then returns to Windows.
+.DESCRIPTION
+    Arms the Bazzite UEFI entry as a one-time boot target (bootsequence)
+    and immediately reboots. After that single Bazzite session the firmware
+    reverts to the Windows default maintained by the StickyWindowsBoot task.
+.NOTES
+    Requires Administrator.
+    Run Install.ps1 once first to set up the scheduled task and shortcut.
+#>
+#Requires -RunAsAdministrator
 
-foreach ($line in ($firmware -split "\r?\n")) {
-    if ($line.Trim().StartsWith("identifier")) {
-        $parts = $line -split "\s+"
-        if ($parts.Count -ge 2) {
-            $current = $parts[1].Trim()
-        }
-    }
-    if ($line -match "Bazzite|fedora|shimx64\.efi" -and $current) {
-        $bazzite = $current
-        break
-    }
+$ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\DualBoot.psm1" -Force
+
+Write-Host 'Searching for Bazzite UEFI entry...' -ForegroundColor Cyan
+$guid = Get-BazziteBootGuid
+
+if (-not $guid) {
+    Write-Error 'Bazzite UEFI boot entry not found. Verify Bazzite is installed and that Install.ps1 has been run.'
+    exit 1
 }
 
-if ($bazzite) {
-    Write-Host "Arming one-time boot to Bazzite ($bazzite)..." -ForegroundColor Cyan
-    cmd /c "bcdedit /set {fwbootmgr} bootsequence $bazzite"
-    Write-Host "Restarting into Bazzite..." -ForegroundColor Green
-    shutdown /r /t 0
-} else {
-    Write-Error "Bazzite UEFI boot entry not found!"
-    Pause
-}
+Write-Host "Arming one-time boot to Bazzite ($guid)..." -ForegroundColor Cyan
+Set-BazziteBootNext -Guid $guid
+
+Write-Host 'Restarting into Bazzite...' -ForegroundColor Green
+shutdown /r /t 0
