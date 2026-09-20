@@ -1,10 +1,9 @@
 # Windows Dual-Boot Setup — ROG Xbox Ally X
 
-Scripts for managing a **Windows + Bazzite** dual-boot setup on the ROG Xbox Ally X.
-
-**The problem:** the UEFI firmware defaults to whichever OS booted last, so waking from
-sleep/hibernate in Windows can unexpectedly drop you into Bazzite. These scripts pin Windows
-as the persistent default while giving you a one-click shortcut to boot Bazzite on demand.
+> **Problem:** the UEFI firmware defaults to whichever OS booted last, so waking
+> from sleep/hibernate in Windows can land you in Bazzite unexpectedly.
+> These scripts pin Windows as the persistent default and give you a one-click
+> desktop shortcut to boot Bazzite on demand.
 
 ---
 
@@ -13,13 +12,17 @@ as the persistent default while giving you a one-click shortcut to boot Bazzite 
 | Requirement | Details |
 |---|---|
 | Hardware | ROG Xbox Ally X (or any UEFI dual-boot PC) |
-| Firmware mode | **UEFI** — CSM / Legacy boot must be **off** |
-| Bazzite | Installed with its own UEFI entry (labelled `Bazzite`, `fedora`, or containing `shimx64.efi`) |
-| Windows | 10 or 11 with **Administrator** account |
-| PowerShell | 5.1+ (built into Windows — no install needed) |
-| `bcdedit.exe` | Built into Windows — no install needed |
+| Firmware mode | **UEFI only** — CSM / Legacy boot must be **off** |
+| Bazzite | Already installed with its own UEFI firmware entry |
+| Windows | 10 or 11, **Administrator** account |
+| PowerShell | 5.1+ (built into Windows — no extra install) |
+| `bcdedit.exe` | Built into Windows — no extra install |
 
-> No third-party software, package manager, or internet connection is required.
+> **No third-party software, package manager, or internet connection is required.**
+
+The installer auto-detects Bazzite by matching any UEFI entry whose `path` or
+`description` contains **`Bazzite`**, **`fedora`**, or **`shimx64.efi`** —
+the labels used by Bazzite's standard GRUB/shim bootloader.
 
 ---
 
@@ -27,10 +30,11 @@ as the persistent default while giving you a one-click shortcut to boot Bazzite 
 
 ```
 1. Boot into Windows.
-2. Double-click  Install.cmd  (approve UAC prompt — one time only).
+2. Double-click  Install.cmd  and approve the UAC prompt (one time only).
 3. A "Restart to Bazzite" shortcut appears on your Desktop.
-4. To boot Bazzite: double-click the shortcut → approve UAC → device reboots into Bazzite.
+4. To boot Bazzite: double-click the shortcut → approve UAC → reboots into Bazzite.
 5. To return to Windows: reboot normally from within Bazzite.
+   The StickyWindowsBoot task re-pins Windows as UEFI default on next logon.
 ```
 
 ---
@@ -39,45 +43,89 @@ as the persistent default while giving you a one-click shortcut to boot Bazzite 
 
 ```
 windows-dualboot-setup/
+│
 ├── lib/
-│   └── DualBoot.psm1           # Shared module — all bcdedit logic lives here (DRY)
+│   └── DualBoot.psm1            # Shared PowerShell module — all bcdedit/boot logic
+│
 ├── tests/
-│   └── DualBoot.Tests.ps1      # Pester v5 unit tests
+│   └── DualBoot.Tests.ps1       # Pester v5 unit tests (20 cases, no real bcdedit)
+│
 ├── extras/
-│   ├── RestartToBazzite.cs     # Optional standalone C# / WinForms GUI
-│   └── Fix-RTSS.ps1            # Utility: fix RivaTuner Statistics Server hooks
-├── Install.ps1                 # One-time setup (run via Install.cmd)
-├── Install.cmd                 # UAC-elevating launcher for Install.ps1
-├── Restart-To-Bazzite.ps1      # Runtime restart script
-├── Restart-To-Bazzite.cmd      # UAC-elevating launcher for Restart-To-Bazzite.ps1
+│   ├── RestartToBazzite.cs      # Optional standalone C# / WinForms GUI launcher
+│   └── Fix-RTSS.ps1             # Utility: repair RivaTuner Statistics Server hooks
+│
+├── Install.ps1                  # One-time setup script
+├── Install.cmd                  # Double-click launcher → UAC-elevates → Install.ps1
+├── Restart-To-Bazzite.ps1       # Runtime: arm Bazzite + reboot
+├── Restart-To-Bazzite.cmd       # Double-click launcher → UAC-elevates → Restart-To-Bazzite.ps1
 ├── .gitignore
 └── README.md
 ```
 
-### `lib/DualBoot.psm1` — the shared module
+---
 
-All UEFI boot logic is in one place. Both `Install.ps1` and `Restart-To-Bazzite.ps1` import it.
+## Module — `lib/DualBoot.psm1`
 
-| Function | Description |
-|---|---|
-| `Find-BazziteGuidInText` | Pure parser — extracts the Bazzite GUID from `bcdedit /enum firmware` text |
-| `Get-BazziteBootGuid` | Calls `bcdedit` and returns the Bazzite UEFI GUID (or `$null`) |
-| `Set-WindowsBootDefault` | `bcdedit /set {fwbootmgr} default {bootmgr}` — pins Windows |
-| `Set-BazziteBootNext` | `bcdedit /set {fwbootmgr} bootsequence <guid>` — arms Bazzite once |
-| `Test-Administrator` | Returns `$true` if running as Administrator |
+All UEFI boot logic lives here. Both `Install.ps1` and `Restart-To-Bazzite.ps1`
+import this module, so the implementation is never duplicated.
+
+| Function | Signature | Description |
+|---|---|---|
+| `Find-BazziteGuidInText` | `([string]$Text)` | **Pure parser.** Scans `bcdedit /enum firmware` output and returns the first matching GUID, or `$null`. No process spawned — directly testable. |
+| `Get-BazziteBootGuid` | `()` | Calls `bcdedit /enum firmware` and returns the Bazzite UEFI GUID, or `$null` if absent. Throws on bcdedit failure (not admin, EFI unsupported, etc.). |
+| `Set-WindowsBootDefault` | `([-WhatIf])` | Runs `bcdedit /set {fwbootmgr} default {bootmgr}`. Supports `-WhatIf`. |
+| `Set-BazziteBootNext` | `(-Guid <uuid> [-WhatIf])` | Runs `bcdedit /set {fwbootmgr} bootsequence <guid>`. Validates GUID format (`{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`). Supports `-WhatIf`. |
+| `Test-Administrator` | `()` | Returns `[bool]` — `$true` when the current session is elevated. |
+
+The private `Invoke-BcdEdit` function wraps every real `bcdedit` call and is
+the **single mock point** used by all unit tests.
+
+---
+
+## Scripts
 
 ### `Install.ps1` — one-time setup
 
-1. Detects the Bazzite UEFI entry.
-2. Copies `Restart-To-Bazzite.ps1` and `lib/DualBoot.psm1` to `C:\DualBoot\`.
-3. Generates a minimal `Set-WindowsBootPriority.cmd` (one-liner bcdedit, no PS overhead).
-4. Creates a desktop shortcut with the UAC "run as administrator" bit set.
-5. Registers the `StickyWindowsBoot` scheduled task (runs at startup + logon as SYSTEM).
-6. Immediately pins Windows as the UEFI default.
+```powershell
+# Default install to C:\DualBoot
+.\Install.ps1
 
-### `Restart-To-Bazzite.ps1` — runtime
+# Custom install directory
+.\Install.ps1 -InstallDir D:\DualBoot
+```
 
-Imports the module, calls `Get-BazziteBootGuid` + `Set-BazziteBootNext`, then `shutdown /r /t 0`.
+Steps performed:
+
+| Step | Action |
+|---|---|
+| 1 | Detect Bazzite UEFI entry via `Get-BazziteBootGuid` (warns if absent, continues) |
+| 2 | Copy `Restart-To-Bazzite.ps1` and `lib/DualBoot.psm1` to `InstallDir\` |
+| 3 | Generate `InstallDir\Set-WindowsBootPriority.cmd` — a minimal one-liner bcdedit called by the scheduled task at logon (no PowerShell startup overhead) |
+| 4 | Create `Restart to Bazzite.lnk` on the Desktop with the UAC "run as administrator" flag set in the `.lnk` binary header |
+| 5 | Register `StickyWindowsBoot` scheduled task (triggers: startup + logon, principal: `NT AUTHORITY\SYSTEM`, highest privileges) |
+| 6 | Immediately call `Set-WindowsBootDefault` to pin Windows for the current session |
+
+### `Restart-To-Bazzite.ps1` — runtime restart
+
+Imports the module, calls `Get-BazziteBootGuid` then `Set-BazziteBootNext`, then
+`shutdown /r /t 0`. Exits with code 1 and a clear error message if no Bazzite
+entry is found.
+
+### `.cmd` launchers
+
+Both `Install.cmd` and `Restart-To-Bazzite.cmd` follow the same pattern:
+
+```cmd
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    powershell -Command "Start-Process cmd -ArgumentList '/c \"%~dpnx0\"' -Verb RunAs"
+    exit /b
+)
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0<Script>.ps1"
+```
+
+They self-elevate via UAC if not already running as Administrator, then hand
+off to the corresponding `.ps1`. No logic lives in the `.cmd` files themselves.
 
 ---
 
@@ -86,46 +134,69 @@ Imports the module, calls `Get-BazziteBootGuid` + `Set-BazziteBootNext`, then `s
 ```
 Windows logon
   └─ StickyWindowsBoot task fires (SYSTEM, highest privileges)
-       └─ bcdedit /set {fwbootmgr} default {bootmgr}   ← Windows stays default
+       └─ Set-WindowsBootPriority.cmd
+            └─ bcdedit /set {fwbootmgr} default {bootmgr}   ← Windows stays default
 
 "Restart to Bazzite" shortcut pressed
-  └─ bcdedit /set {fwbootmgr} bootsequence <bazzite-guid>  ← one-time override
-  └─ shutdown /r /t 0
+  └─ Restart-To-Bazzite.ps1
+       ├─ bcdedit /set {fwbootmgr} bootsequence <bazzite-guid>  ← one-time override
+       └─ shutdown /r /t 0
 
-Device boots Bazzite  (bootsequence is consumed, firmware reverts to Windows default)
+Device boots Bazzite
+  └─ bootsequence is consumed by firmware → reverts to {fwbootmgr} default = Windows
 
 Next Windows logon
-  └─ StickyWindowsBoot re-confirms Windows as default
+  └─ StickyWindowsBoot re-pins Windows as default
 ```
 
-> `bootsequence` (not `default`) is used for the Bazzite arm — so after one Bazzite session the
-> firmware automatically reverts. The scheduled task then re-pins Windows on the next logon.
+> **Why `bootsequence` and not `default`?** `bootsequence` is consumed after a
+> single boot, so the firmware automatically reverts to the persistent `default`
+> (Windows). No cleanup step is needed after returning from Bazzite.
 
 ---
 
 ## Running the tests
 
-Tests use [Pester v5](https://pester.dev). Install it once, then run:
+Tests use [Pester v5](https://pester.dev) and mock all `bcdedit` calls — no
+real process is spawned and tests run on any platform (Windows, macOS, Linux).
 
 ```powershell
-# Install Pester v5 (one time)
+# Install Pester v5 once
 Install-Module -Name Pester -MinimumVersion 5.0.0 -Force -Scope CurrentUser
 
-# Run all tests
+# Run all tests with detailed output
 Invoke-Pester .\tests\DualBoot.Tests.ps1 -Output Detailed
 ```
 
-The tests cover all exported module functions with full mocking of `bcdedit` via `InModuleScope`,
-so no real bcdedit process is spawned and tests run on any platform (including macOS/Linux for CI).
+### Test coverage
+
+| `Describe` block | Cases | What is covered |
+|---|---|---|
+| `Find-BazziteGuidInText` | 7 | `Bazzite` / `fedora` / `shimx64.efi` labels, case-insensitivity, multi-entry ordering, empty string |
+| `Get-BazziteBootGuid` | 4 | Found, not-found, bcdedit non-zero exit, correct `/enum firmware` argument |
+| `Set-BazziteBootNext` | 5 | Correct args, targets `{fwbootmgr}`, bcdedit failure, invalid GUID rejected, valid UUID accepted |
+| `Set-WindowsBootDefault` | 3 | Correct args, bcdedit failure, `-WhatIf` produces zero bcdedit calls |
+| `Test-Administrator` | 1 | Returns `[bool]` |
+
+---
+
+## Extras
+
+| File | Purpose |
+|---|---|
+| [`extras/RestartToBazzite.cs`](./extras/RestartToBazzite.cs) | Self-contained C# / WinForms GUI — auto-elevates via UAC, detects the Bazzite GUID with `bcdedit /enum firmware`, sets `bootsequence`, and calls `shutdown /r /t 0`. Compile with `csc.exe /target:winexe /r:System.Windows.Forms.dll RestartToBazzite.cs`. |
+| [`extras/Fix-RTSS.ps1`](./extras/Fix-RTSS.ps1) | Repairs RivaTuner Statistics Server (RTSS) hooks — enables Microsoft Detours, disables D3D8 hooking, clears stale `FnOffsetCache`. Unrelated to dual-boot; included as a convenience utility for gaming setups. |
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| "Bazzite boot entry not found" | Bazzite's EFI entry has an unusual label | Run `bcdedit /enum firmware` in elevated cmd; check that at least one entry contains `Bazzite`, `fedora`, or `shimx64.efi` |
-| UAC prompt loops / nothing happens | Execution policy blocking PowerShell | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` once in an elevated PowerShell |
-| Device still boots Windows after shortcut | `bootsequence` was not written | Run `bcdedit /enum firmware` after the script and verify `bootsequence` contains the Bazzite GUID |
-| Scheduled task not running | Task registered without SYSTEM privileges | Open Task Scheduler → `StickyWindowsBoot` → verify it runs as `NT AUTHORITY\SYSTEM` at highest level |
-| `C:\DualBoot` scripts missing | Install.ps1 not run after a reinstall | Re-run `Install.cmd` |
+| "Bazzite boot entry not found" | EFI entry has an unusual label | Run `bcdedit /enum firmware` in an elevated cmd; verify at least one entry contains `Bazzite`, `fedora`, or `shimx64.efi` |
+| UAC prompt loops / nothing runs | PowerShell execution policy | Run `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` in an elevated PowerShell |
+| Shortcut clicks but nothing happens | Script path changed after moving `InstallDir` | Re-run `Install.cmd` with the new `-InstallDir` path |
+| Device still boots Windows after shortcut | `bootsequence` not written (bcdedit failed silently) | Open an elevated PowerShell and run `Restart-To-Bazzite.ps1` directly to see the error |
+| Device reboots to Windows instead of Bazzite | Bazzite GUID changed after a firmware update | Re-run `Install.cmd` to re-detect the GUID |
+| Scheduled task not running | Task deregistered or missing SYSTEM privilege | Open Task Scheduler → `StickyWindowsBoot` → verify principal is `NT AUTHORITY\SYSTEM` at highest level; re-run `Install.cmd` if missing |
+| `C:\DualBoot` scripts missing | `Install.ps1` not re-run after reinstall | Re-run `Install.cmd` |
