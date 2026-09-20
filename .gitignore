@@ -1,0 +1,67 @@
+# ── Compiled C# output ──────────────────────────────────────────────────────
+*.exe
+*.pdb
+*.dll
+*.obj
+*.ilk
+bin/
+obj/
+
+# ── Visual Studio / MSBuild ──────────────────────────────────────────────────
+*.suo
+*.user
+*.sln
+*.csproj
+*.csproj.user
+*.vbproj
+*.vcxproj
+*.vcxproj.filters
+*.ncb
+*.aps
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+.vs/
+[Dd]ebug/
+[Rr]elease/
+[Xx]64/
+[Xx]86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+msbuild.log
+msbuild.err
+msbuild.wrn
+
+# ── VS Code ──────────────────────────────────────────────────────────────────
+.vscode/
+
+# ── PowerShell ───────────────────────────────────────────────────────────────
+# Transcript logs written by Start-Transcript
+*.log
+
+# ── Windows OS metadata ───────────────────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ── macOS (repo lives on macOS) ───────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ── Temporary / scratch files ─────────────────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+*~
