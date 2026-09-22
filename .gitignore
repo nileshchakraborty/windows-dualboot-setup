@@ -10,12 +10,11 @@ obj/
 # ── Visual Studio / MSBuild ──────────────────────────────────────────────────
 *.suo
 *.user
-*.sln
-*.csproj
+*.userosv
+*.sln.docstates
+*.suo
 *.csproj.user
-*.vbproj
-*.vcxproj
-*.vcxproj.filters
+*.vcxproj.user
 *.ncb
 *.aps
 *.opensdf

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Multi-target net48 (zero runtime dependencies on Windows 10/11) and net8.0-windows -->
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>RestartToBazzite.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>RestartToBazzite</AssemblyName>
+    <RootNamespace>RestartToBazzite</RootNamespace>
+    <Nullable>disable</Nullable>
+    
+    <!-- Assembly Metadata -->
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Title>Restart to Bazzite</Title>
+    <Description>One-click restart into Bazzite / SteamOS for ROG Ally and handheld gaming devices</Description>
+    <Company>Nilesh Chakraborty</Company>
+    <Product>Restart to Bazzite</Product>
+    <Copyright>Copyright © 2026 Nilesh Chakraborty</Copyright>
+
+    <!-- Single file publish settings when targeting net8.0-windows -->
+    <PublishSingleFile Condition="'$(TargetFramework)' == 'net8.0-windows'">true</PublishSingleFile>
+    <SelfContained Condition="'$(TargetFramework)' == 'net8.0-windows'">false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(TargetFramework)' == 'net8.0-windows'">true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="RestartToBazzite.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

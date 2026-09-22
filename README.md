@@ -44,20 +44,31 @@ the labels used by Bazzite's standard GRUB/shim bootloader.
 ```
 windows-dualboot-setup/
 │
+├── RestartToBazzite.sln        # Visual Studio solution for building RestartToBazzite.exe
+├── build.cmd                  # Quick build script (dotnet CLI, MSBuild, or csc.exe)
+│
+├── src/
+│   └── RestartToBazzite/
+│       ├── RestartToBazzite.csproj  # C# project (multi-targets net48 + net8.0-windows)
+│       ├── Program.cs               # Core application logic & UEFI discovery
+│       ├── app.manifest             # UAC administrator elevation & PerMonitorV2 DPI
+│       └── RestartToBazzite.ico     # Multi-resolution embedded application icon
+│
 ├── lib/
-│   └── DualBoot.psm1            # Shared PowerShell module — all bcdedit/boot logic
+│   └── DualBoot.psm1          # Shared PowerShell module — all bcdedit/boot logic
 │
 ├── tests/
-│   └── DualBoot.Tests.ps1       # Pester v5 unit tests (20 cases, no real bcdedit)
+│   └── DualBoot.Tests.ps1     # Pester v5 unit tests (20 cases, no real bcdedit)
 │
 ├── extras/
-│   ├── RestartToBazzite.cs      # Optional standalone C# / WinForms GUI launcher
-│   └── Fix-RTSS.ps1             # Utility: repair RivaTuner Statistics Server hooks
+│   ├── RestartToBazzite.cs    # Standalone single-file C# source
+│   └── Fix-RTSS.ps1           # Utility: repair RivaTuner Statistics Server hooks
 │
-├── Install.ps1                  # One-time setup script
-├── Install.cmd                  # Double-click launcher → UAC-elevates → Install.ps1
-├── Restart-To-Bazzite.ps1       # Runtime: arm Bazzite + reboot
-├── Restart-To-Bazzite.cmd       # Double-click launcher → UAC-elevates → Restart-To-Bazzite.ps1
+├── Install.ps1                # One-time setup script (copies scripts/exe, sets task & shortcut)
+├── Install.cmd                # Double-click launcher → UAC-elevates → Install.ps1
+├── Restart-To-Bazzite.ps1     # Runtime script: arm Bazzite + reboot
+├── Restart-To-Bazzite.cmd     # Double-click launcher → UAC-elevates → Restart-To-Bazzite.ps1
+├── .github/workflows/build.yml # CI workflow: builds solution & publishes release artifacts
 ├── .gitignore
 └── README.md
 ```
@@ -180,11 +191,80 @@ Invoke-Pester .\tests\DualBoot.Tests.ps1 -Output Detailed
 
 ---
 
+## Building `RestartToBazzite.exe`
+
+`RestartToBazzite.sln` generates a standalone Windows GUI executable (`RestartToBazzite.exe`) designed specifically for handheld launchers where launching PowerShell or batch scripts is clunky or unsupported.
+
+### Target Frameworks & Compatibility
+- **`net48` (.NET Framework 4.8):** Zero-dependency build. .NET Framework 4.8 is built into every Windows 10 (1903+) and Windows 11 installation. The resulting binary (~30-60 KB) runs out-of-the-box on any gaming handheld without installing additional runtimes.
+- **`net8.0-windows` (.NET 8):** Modern .NET Desktop SDK build for environments with .NET 8 Desktop Runtime installed.
+
+### How to Build
+
+#### Option A: Visual Studio 2019 / 2022
+1. Open `RestartToBazzite.sln` in Visual Studio.
+2. Select **Release** and **Any CPU** (or **x64**).
+3. Press **Ctrl+Shift+B** (Build Solution).
+4. Binary is created at `src/RestartToBazzite/bin/Release/net48/RestartToBazzite.exe`.
+
+#### Option B: .NET CLI
+```cmd
+dotnet build RestartToBazzite.sln -c Release
+```
+
+#### Option C: Built-in `build.cmd` (Zero Pre-requisites)
+Simply double-click `build.cmd` or run:
+```cmd
+build.cmd
+```
+`build.cmd` checks for `dotnet`, then Visual Studio `MSBuild`, and automatically falls back to Windows's built-in `csc.exe` compiler (`%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`), guaranteeing a successful build on any Windows machine.
+
+---
+
+## Handheld Launcher Integration
+
+The primary purpose of `RestartToBazzite.exe` is to attach to handheld launchers for seamless 1-click reboot into Bazzite using your controller:
+
+### 1. ASUS Armoury Crate SE (ROG Ally & Ally X)
+1. Open Armoury Crate SE → **Game Library**.
+2. Press **Add** (or gamepad `X`).
+3. Browse to `C:\DualBoot\RestartToBazzite.exe` (or your build path).
+4. Armoury Crate automatically attaches the embedded Bazzite icon.
+5. In Armoury Crate, highlight the tile → press `Menu` → rename to **"Restart to Bazzite"**.
+6. Select the tile anytime to reboot instantly into Bazzite!
+
+### 2. Xbox App
+1. Open the Xbox App on Windows.
+2. Under "Installed", click **Add a game from your PC**.
+3. Browse and select `C:\DualBoot\RestartToBazzite.exe`.
+4. The tile appears in your Xbox App home screen.
+
+### 3. Winhance / Handheld Companion
+1. Open Winhance or Handheld Companion Quick Access Menu / App launcher.
+2. Add `RestartToBazzite.exe` as a quick-action button or app shortcut.
+3. Trigger from the overlay with a single button press.
+
+---
+
+## Two-Way Dual-Boot Ecosystem
+
+This project works in tandem with [`restart-to-windows`](https://github.com/nileshchakraborty/restart-to-windows) (Decky Loader plugin for Bazzite / SteamOS):
+
+| From | To | Mechanism | Tool |
+|---|---|---|---|
+| **Windows** | **Bazzite** | Windows pins `bootsequence` via `bcdedit` and restarts | `RestartToBazzite.exe` / `Restart-To-Bazzite.cmd` |
+| **Bazzite** | **Windows** | Bazzite sets `BootNext` via `efibootmgr` and restarts | [`restart-to-windows`](https://github.com/nileshchakraborty/restart-to-windows) Decky Plugin |
+
+The `StickyWindowsBoot` task ensures Windows remains the persistent default, so sleep, wake, or normal restarts in Windows never unintentionally throw you into Bazzite.
+
+---
+
 ## Extras
 
 | File | Purpose |
 |---|---|
-| [`extras/RestartToBazzite.cs`](./extras/RestartToBazzite.cs) | Self-contained C# / WinForms GUI — auto-elevates via UAC, detects the Bazzite GUID with `bcdedit /enum firmware`, sets `bootsequence`, and calls `shutdown /r /t 0`. Compile with `csc.exe /target:winexe /r:System.Windows.Forms.dll RestartToBazzite.cs`. |
+| [`src/RestartToBazzite/`](./src/RestartToBazzite/) | Full C# project source with `RestartToBazzite.sln`, multi-targeting `net48`/`net8.0-windows`, UAC `app.manifest`, and embedded icon. |
+| [`extras/RestartToBazzite.cs`](./extras/RestartToBazzite.cs) | Standalone single-file C# / WinForms GUI. |
 | [`extras/Fix-RTSS.ps1`](./extras/Fix-RTSS.ps1) | Repairs RivaTuner Statistics Server (RTSS) hooks — enables Microsoft Detours, disables D3D8 hooking, clears stale `FnOffsetCache`. Unrelated to dual-boot; included as a convenience utility for gaming setups. |
 
 ---

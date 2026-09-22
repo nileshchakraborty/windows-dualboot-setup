@@ -35,14 +35,34 @@ if ($bazziteGuid) {
     Write-Warning '      Bazzite entry not detected — Restart-To-Bazzite will search dynamically at runtime.'
 }
 
-# ── 2. Install runtime scripts ────────────────────────────────────────────
-Write-Host "`n[2/4] Installing runtime scripts to $InstallDir..." -ForegroundColor Yellow
+# ── 2. Install runtime scripts & executable ────────────────────────────────
+Write-Host "`n[2/4] Installing runtime files to $InstallDir..." -ForegroundColor Yellow
 $libDir = Join-Path $InstallDir 'lib'
 $null   = New-Item -ItemType Directory -Path $libDir -Force
 
 # Runtime script + module (module kept alongside so the script can always find it)
 Copy-Item "$PSScriptRoot\Restart-To-Bazzite.ps1" -Destination $InstallDir -Force
 Copy-Item "$PSScriptRoot\lib\DualBoot.psm1"       -Destination $libDir    -Force
+
+# Look for compiled RestartToBazzite.exe binary
+$exeCandidates = @(
+    (Join-Path $PSScriptRoot 'src\RestartToBazzite\bin\Release\net48\RestartToBazzite.exe'),
+    (Join-Path $PSScriptRoot 'src\RestartToBazzite\bin\Release\net8.0-windows\RestartToBazzite.exe'),
+    (Join-Path $PSScriptRoot 'RestartToBazzite.exe')
+) | Where-Object { Test-Path $_ }
+
+$installedExe = $null
+if ($exeCandidates.Count -gt 0) {
+    $sourceExe = $exeCandidates[0]
+    $installedExe = Join-Path $InstallDir 'RestartToBazzite.exe'
+    Copy-Item $sourceExe -Destination $installedExe -Force
+    Write-Host "      Installed executable: $installedExe" -ForegroundColor Green
+
+    $sourceIco = Join-Path $PSScriptRoot 'src\RestartToBazzite\RestartToBazzite.ico'
+    if (Test-Path $sourceIco) {
+        Copy-Item $sourceIco -Destination (Join-Path $InstallDir 'RestartToBazzite.ico') -Force
+    }
+}
 
 # Minimal sticky-boot helper called by the scheduled task.
 # Intentionally a plain bcdedit one-liner — no PS overhead at logon.
@@ -54,15 +74,24 @@ Write-Host "      Scripts installed to $InstallDir" -ForegroundColor Green
 
 # ── 3. Desktop shortcut ───────────────────────────────────────────────────
 Write-Host "`n[3/4] Creating desktop shortcut..." -ForegroundColor Yellow
-$restartScript = Join-Path $InstallDir 'Restart-To-Bazzite.ps1'
-$shortcutPath  = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restart to Bazzite.lnk'
-$shell         = New-Object -ComObject WScript.Shell
-$sc            = $shell.CreateShortcut($shortcutPath)
-$sc.TargetPath       = 'powershell.exe'
-$sc.Arguments        = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$restartScript`""
-$sc.WorkingDirectory = $InstallDir
-$sc.Description      = 'Restart into Bazzite for one boot'
-$sc.IconLocation     = 'shell32.dll,220'
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restart to Bazzite.lnk'
+$shell        = New-Object -ComObject WScript.Shell
+$sc           = $shell.CreateShortcut($shortcutPath)
+
+if ($installedExe -and (Test-Path $installedExe)) {
+    $sc.TargetPath       = $installedExe
+    $sc.Arguments        = ''
+    $sc.WorkingDirectory = $InstallDir
+    $sc.Description      = 'Restart into Bazzite for one boot'
+    $sc.IconLocation     = "$installedExe,0"
+} else {
+    $restartScript       = Join-Path $InstallDir 'Restart-To-Bazzite.ps1'
+    $sc.TargetPath       = 'powershell.exe'
+    $sc.Arguments        = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$restartScript`""
+    $sc.WorkingDirectory = $InstallDir
+    $sc.Description      = 'Restart into Bazzite for one boot'
+    $sc.IconLocation     = 'shell32.dll,220'
+}
 $sc.Save()
 
 # Set the "Run as Administrator" flag in the .lnk binary header (byte 0x15, bit 5)
@@ -70,6 +99,9 @@ $bytes       = [IO.File]::ReadAllBytes($shortcutPath)
 $bytes[0x15] = $bytes[0x15] -bor 0x20
 [IO.File]::WriteAllBytes($shortcutPath, $bytes)
 Write-Host "      Created: $shortcutPath" -ForegroundColor Green
+if ($installedExe) {
+    Write-Host "      Tip: You can add '$installedExe' directly to ASUS Armoury Crate SE, Xbox App, or Winhance!" -ForegroundColor Cyan
+}
 
 # ── 4. Scheduled task ─────────────────────────────────────────────────────
 Write-Host "`n[4/4] Registering StickyWindowsBoot scheduled task..." -ForegroundColor Yellow

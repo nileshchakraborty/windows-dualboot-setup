@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Security.Principal;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -8,6 +9,10 @@ namespace RestartToBazziteApp
 {
     static class Program
     {
+        private static readonly Regex GuidRegex = new Regex(
+            @"^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$",
+            RegexOptions.Compiled);
+
         [STAThread]
         static void Main()
         {
@@ -47,27 +52,45 @@ namespace RestartToBazziteApp
             // 3. Arm Bazzite as one-time boot target and restart
             try
             {
+                string bcdedit = Path.Combine(Environment.SystemDirectory, "bcdedit.exe");
                 ProcessStartInfo bcd = new ProcessStartInfo
                 {
-                    FileName = "bcdedit.exe",
+                    FileName = bcdedit,
                     Arguments = string.Format("/set {{fwbootmgr}} bootsequence {0}", bazziteGuid),
                     CreateNoWindow = true,
-                    UseShellExecute = false
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
                 };
                 using (Process p = Process.Start(bcd))
                 {
+                    string stdout = p.StandardOutput.ReadToEnd();
+                    string stderr = p.StandardError.ReadToEnd();
                     p.WaitForExit(5000);
+
+                    if (p.ExitCode != 0)
+                    {
+                        string err = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : stdout.Trim();
+                        MessageBox.Show(
+                            string.Format("Failed to arm Bazzite boot (Exit code {0}):\n{1}", p.ExitCode, err),
+                            "Restart to Bazzite",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error
+                        );
+                        return;
+                    }
                 }
 
                 // 4. Trigger Restart
-                ProcessStartInfo shutdown = new ProcessStartInfo
+                string shutdown = Path.Combine(Environment.SystemDirectory, "shutdown.exe");
+                ProcessStartInfo shutdownInfo = new ProcessStartInfo
                 {
-                    FileName = "shutdown.exe",
+                    FileName = shutdown,
                     Arguments = "/r /t 0",
                     CreateNoWindow = true,
                     UseShellExecute = false
                 };
-                Process.Start(shutdown);
+                Process.Start(shutdownInfo);
             }
             catch (Exception ex)
             {
@@ -93,9 +116,10 @@ namespace RestartToBazziteApp
         {
             try
             {
+                string bcdedit = Path.Combine(Environment.SystemDirectory, "bcdedit.exe");
                 ProcessStartInfo psi = new ProcessStartInfo
                 {
-                    FileName = "bcdedit.exe",
+                    FileName = bcdedit,
                     Arguments = "/enum firmware",
                     CreateNoWindow = true,
                     UseShellExecute = false,
@@ -125,8 +149,10 @@ namespace RestartToBazziteApp
 
                     if ((line.IndexOf("Bazzite", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          line.IndexOf("fedora", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         line.IndexOf("shimx64.efi", StringComparison.OrdinalIgnoreCase) >= 0) &&
-                        !string.IsNullOrEmpty(currentGuid))
+                         line.IndexOf("shimx64.efi", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         line.IndexOf("grubx64.efi", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         line.IndexOf("steamos", StringComparison.OrdinalIgnoreCase) >= 0) &&
+                        !string.IsNullOrEmpty(currentGuid) && GuidRegex.IsMatch(currentGuid))
                     {
                         return currentGuid;
                     }
