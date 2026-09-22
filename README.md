@@ -48,31 +48,39 @@ The tool auto-detects Bazzite by matching any UEFI entry whose `path` or
 ```
 windows-dualboot-setup/
 │
-├── RestartToBazzite.sln        # Visual Studio solution for building RestartToBazzite.exe
+├── RestartToBazzite.sln        # Visual Studio solution (builds both Bazzite & SteamOS apps)
 ├── build.cmd                  # Quick build script (dotnet CLI, MSBuild, or csc.exe)
 │
 ├── src/
-│   └── RestartToBazzite/
-│       ├── RestartToBazzite.csproj  # C# project (multi-targets net48 + net8.0-windows)
-│       ├── Program.cs               # Core application logic & UEFI discovery
-│       ├── app.manifest             # UAC administrator elevation & PerMonitorV2 DPI
-│       └── RestartToBazzite.ico     # Multi-resolution embedded application icon
+│   ├── RestartToBazzite/      # Bazzite launcher project
+│   │   ├── RestartToBazzite.csproj
+│   │   ├── Program.cs         # Core application logic & dynamic UEFI discovery
+│   │   ├── app.manifest       # UAC administrator elevation & PerMonitorV2 DPI
+│   │   └── RestartToBazzite.ico
+│   │
+│   └── RestartToSteamOS/      # SteamOS launcher project (Steam-themed)
+│       ├── RestartToSteamOS.csproj
+│       ├── app.manifest
+│       └── RestartToSteamOS.ico
 │
 ├── lib/
 │   └── DualBoot.psm1          # Shared PowerShell module — all bcdedit/boot logic
 │
 ├── tests/
-│   └── DualBoot.Tests.ps1     # Pester v5 unit tests (20 cases, no real bcdedit)
+│   ├── DualBoot.Tests.ps1     # Pester v5 unit tests (bcdedit mock cases)
+│   └── RestartToBazzite.Tests/# C# MSTest unit tests (12 automated CI cases)
 │
 ├── extras/
 │   ├── RestartToBazzite.cs    # Standalone single-file C# source
 │   └── Fix-RTSS.ps1           # Utility: repair RivaTuner Statistics Server hooks
 │
-├── Install.ps1                # One-time setup script (copies scripts/exe, sets task & shortcut)
+├── Install.ps1                # One-time setup (auto-detects Bazzite or SteamOS)
 ├── Install.cmd                # Double-click launcher → UAC-elevates → Install.ps1
-├── Restart-To-Bazzite.ps1     # Runtime script: arm Bazzite + reboot
-├── Restart-To-Bazzite.cmd     # Double-click launcher → UAC-elevates → Restart-To-Bazzite.ps1
-├── .github/workflows/build.yml # CI workflow: builds solution & publishes release artifacts
+├── Restart-To-Bazzite.ps1     # Runtime script for Bazzite
+├── Restart-To-Bazzite.cmd     # Double-click launcher for Bazzite
+├── Restart-To-SteamOS.ps1     # Runtime script for SteamOS
+├── Restart-To-SteamOS.cmd     # Double-click launcher for SteamOS
+├── .github/workflows/build.yml # CI workflow: builds both launchers & runs tests
 ├── .gitignore
 └── README.md
 ```
@@ -195,9 +203,13 @@ Invoke-Pester .\tests\DualBoot.Tests.ps1 -Output Detailed
 
 ---
 
-## Building `RestartToBazzite.exe`
+## Building the Launchers (`RestartToBazzite.exe` & `RestartToSteamOS.exe`)
 
-`RestartToBazzite.sln` generates a standalone Windows GUI executable (`RestartToBazzite.exe`) designed specifically for handheld launchers where launching PowerShell or batch scripts is clunky or unsupported.
+`RestartToBazzite.sln` generates two standalone Windows GUI executables designed specifically for handheld launchers where launching PowerShell or batch scripts is clunky or unsupported:
+- **`RestartToBazzite.exe`** — Themed with Bazzite cyan/violet branding and icon.
+- **`RestartToSteamOS.exe`** — Themed with SteamOS electric blue branding and icon.
+
+Both binaries dynamically detect whether Bazzite or SteamOS is present on the device, adapt their dialogs/titles accordingly, arm the EFI boot target via `bcdedit /set {fwbootmgr} bootsequence <guid>`, and trigger an immediate reboot (`shutdown /r /t 0`).
 
 ### Target Frameworks & Compatibility
 - **`net48` (.NET Framework 4.8):** Zero-dependency build. .NET Framework 4.8 is built into every Windows 10 (1903+) and Windows 11 installation. The resulting binary (~30-60 KB) runs out-of-the-box on any gaming handheld without installing additional runtimes.
@@ -209,7 +221,7 @@ Invoke-Pester .\tests\DualBoot.Tests.ps1 -Output Detailed
 1. Open `RestartToBazzite.sln` in Visual Studio.
 2. Select **Release** and **Any CPU** (or **x64**).
 3. Press **Ctrl+Shift+B** (Build Solution).
-4. Binary is created at `src/RestartToBazzite/bin/Release/net48/RestartToBazzite.exe`.
+4. Both binaries are created under `src/RestartToBazzite/bin/Release/net48/` and `src/RestartToSteamOS/bin/Release/net48/`.
 
 #### Option B: .NET CLI
 ```cmd
@@ -221,31 +233,31 @@ Simply double-click `build.cmd` or run:
 ```cmd
 build.cmd
 ```
-`build.cmd` checks for `dotnet`, then Visual Studio `MSBuild`, and automatically falls back to Windows's built-in `csc.exe` compiler (`%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`), guaranteeing a successful build on any Windows machine.
+`build.cmd` checks for `dotnet`, then Visual Studio `MSBuild`, and automatically falls back to Windows's built-in `csc.exe` compiler (`%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`), guaranteeing a successful build for both executables on any Windows machine.
 
 ---
 
 ## Handheld Launcher Integration
 
-The primary purpose of `RestartToBazzite.exe` is to attach to handheld launchers for seamless 1-click reboot into Bazzite using your controller:
+Attach the desired executable (`RestartToBazzite.exe` or `RestartToSteamOS.exe`) to your handheld's front-end for seamless 1-click reboot using your controller:
 
 ### 1. ASUS Armoury Crate SE (ROG Ally & Ally X)
 1. Open Armoury Crate SE → **Game Library**.
 2. Press **Add** (or gamepad `X`).
-3. Browse to `C:\DualBoot\RestartToBazzite.exe` (or your build path).
-4. Armoury Crate automatically attaches the embedded Bazzite icon.
-5. In Armoury Crate, highlight the tile → press `Menu` → rename to **"Restart to Bazzite"**.
-6. Select the tile anytime to reboot instantly into Bazzite!
+3. Browse to `C:\DualBoot\RestartToBazzite.exe` (or `RestartToSteamOS.exe`).
+4. Armoury Crate automatically attaches the embedded icon.
+5. Highlight the tile → press `Menu` → rename to **"Restart to Bazzite"** (or **"Restart to SteamOS"**).
+6. Select the tile anytime to reboot instantly!
 
 ### 2. Xbox App
 1. Open the Xbox App on Windows.
 2. Under "Installed", click **Add a game from your PC**.
-3. Browse and select `C:\DualBoot\RestartToBazzite.exe`.
-4. The tile appears in your Xbox App home screen.
+3. Browse and select `RestartToBazzite.exe` or `RestartToSteamOS.exe`.
+4. The tile appears in your Xbox App library.
 
 ### 3. Winhance / Handheld Companion
 1. Open Winhance or Handheld Companion Quick Access Menu / App launcher.
-2. Add `RestartToBazzite.exe` as a quick-action button or app shortcut.
+2. Add `RestartToBazzite.exe` or `RestartToSteamOS.exe` as a quick-action button or app shortcut.
 3. Trigger from the overlay with a single button press.
 
 ---

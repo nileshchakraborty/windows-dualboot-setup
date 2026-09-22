@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ========================================================
-echo   Building RestartToBazzite.exe
+echo   Building RestartToBazzite.exe & RestartToSteamOS.exe
 echo ========================================================
 
 :: Check for dotnet CLI
@@ -38,7 +38,14 @@ if not exist "%CSC_EXE%" set CSC_EXE=%SystemRoot%\Microsoft.NET\Framework\v4.0.3
 if exist "%CSC_EXE%" (
     echo [*] Building via built-in Windows .NET Framework compiler: %CSC_EXE%
     if not exist "%~dp0src\RestartToBazzite\bin\Release\net48" mkdir "%~dp0src\RestartToBazzite\bin\Release\net48"
+    if not exist "%~dp0src\RestartToSteamOS\bin\Release\net48" mkdir "%~dp0src\RestartToSteamOS\bin\Release\net48"
+
+    echo [*] Compiling RestartToBazzite.exe...
     "%CSC_EXE%" /target:winexe /optimize+ /win32manifest:"%~dp0src\RestartToBazzite\app.manifest" /win32icon:"%~dp0src\RestartToBazzite\RestartToBazzite.ico" /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:"%~dp0src\RestartToBazzite\bin\Release\net48\RestartToBazzite.exe" "%~dp0src\RestartToBazzite\Program.cs"
+    
+    echo [*] Compiling RestartToSteamOS.exe...
+    "%CSC_EXE%" /target:winexe /optimize+ /win32manifest:"%~dp0src\RestartToSteamOS\app.manifest" /win32icon:"%~dp0src\RestartToSteamOS\RestartToSteamOS.ico" /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:"%~dp0src\RestartToSteamOS\bin\Release\net48\RestartToSteamOS.exe" "%~dp0src\RestartToBazzite\Program.cs"
+
     if !errorLevel! equ 0 (
         echo [OK] Build succeeded via csc.exe!
         goto :done
@@ -50,6 +57,7 @@ exit /b 1
 
 :done
 echo.
-echo Binary located at:
+echo Binaries generated:
 dir /b /s "%~dp0src\RestartToBazzite\bin\Release\RestartToBazzite.exe" 2>nul
+dir /b /s "%~dp0src\RestartToSteamOS\bin\Release\RestartToSteamOS.exe" 2>nul
 echo ========================================================

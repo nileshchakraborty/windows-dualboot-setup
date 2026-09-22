@@ -23,40 +23,52 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot\lib\DualBoot.psm1" -Force
 
 Write-Host '======================================================' -ForegroundColor Cyan
-Write-Host '  Dual-Boot Setup — Sticky Boot + Restart to Bazzite' -ForegroundColor Cyan
+Write-Host '  Dual-Boot Setup — Sticky Boot + Bazzite / SteamOS' -ForegroundColor Cyan
 Write-Host '======================================================' -ForegroundColor Cyan
 
-# ── 1. Detect Bazzite UEFI entry ──────────────────────────────────────────
-Write-Host "`n[1/4] Detecting Bazzite UEFI entry..." -ForegroundColor Yellow
-$bazziteGuid = Get-BazziteBootGuid
+# ── 1. Detect Bazzite or SteamOS UEFI entry ────────────────────────────────
+Write-Host "`n[1/4] Detecting UEFI boot entries..." -ForegroundColor Yellow
+$bazziteGuid = Get-LinuxBootGuid -Target 'Bazzite'
+$steamosGuid = Get-LinuxBootGuid -Target 'SteamOS'
+
 if ($bazziteGuid) {
-    Write-Host "      Found: $bazziteGuid" -ForegroundColor Green
-} else {
-    Write-Warning '      Bazzite entry not detected — Restart-To-Bazzite will search dynamically at runtime.'
+    Write-Host "      Found Bazzite: $bazziteGuid" -ForegroundColor Green
+}
+if ($steamosGuid) {
+    Write-Host "      Found SteamOS: $steamosGuid" -ForegroundColor Green
+}
+if (-not $bazziteGuid -and -not $steamosGuid) {
+    Write-Warning '      Neither Bazzite nor SteamOS entry detected — will search dynamically at runtime.'
 }
 
-# ── 2. Install runtime scripts & executable ────────────────────────────────
+# ── 2. Install runtime scripts & executables ──────────────────────────────
 Write-Host "`n[2/4] Installing runtime files to $InstallDir..." -ForegroundColor Yellow
 $libDir = Join-Path $InstallDir 'lib'
 $null   = New-Item -ItemType Directory -Path $libDir -Force
 
-# Runtime script + module (module kept alongside so the script can always find it)
+# Runtime scripts + module
 Copy-Item "$PSScriptRoot\Restart-To-Bazzite.ps1" -Destination $InstallDir -Force
+Copy-Item "$PSScriptRoot\Restart-To-SteamOS.ps1" -Destination $InstallDir -Force
 Copy-Item "$PSScriptRoot\lib\DualBoot.psm1"       -Destination $libDir    -Force
 
-# Look for compiled RestartToBazzite.exe binary
-$exeCandidates = @(
+# Look for compiled binaries
+$bazziteExeCandidates = @(
     (Join-Path $PSScriptRoot 'src\RestartToBazzite\bin\Release\net48\RestartToBazzite.exe'),
     (Join-Path $PSScriptRoot 'src\RestartToBazzite\bin\Release\net8.0-windows\RestartToBazzite.exe'),
     (Join-Path $PSScriptRoot 'RestartToBazzite.exe')
 ) | Where-Object { Test-Path $_ }
 
-$installedExe = $null
-if ($exeCandidates.Count -gt 0) {
-    $sourceExe = $exeCandidates[0]
-    $installedExe = Join-Path $InstallDir 'RestartToBazzite.exe'
-    Copy-Item $sourceExe -Destination $installedExe -Force
-    Write-Host "      Installed executable: $installedExe" -ForegroundColor Green
+$steamosExeCandidates = @(
+    (Join-Path $PSScriptRoot 'src\RestartToSteamOS\bin\Release\net48\RestartToSteamOS.exe'),
+    (Join-Path $PSScriptRoot 'src\RestartToSteamOS\bin\Release\net8.0-windows\RestartToSteamOS.exe'),
+    (Join-Path $PSScriptRoot 'RestartToSteamOS.exe')
+) | Where-Object { Test-Path $_ }
+
+$installedBazziteExe = $null
+if ($bazziteExeCandidates.Count -gt 0) {
+    $installedBazziteExe = Join-Path $InstallDir 'RestartToBazzite.exe'
+    Copy-Item $bazziteExeCandidates[0] -Destination $installedBazziteExe -Force
+    Write-Host "      Installed: $installedBazziteExe" -ForegroundColor Green
 
     $sourceIco = Join-Path $PSScriptRoot 'src\RestartToBazzite\RestartToBazzite.ico'
     if (Test-Path $sourceIco) {
@@ -64,44 +76,73 @@ if ($exeCandidates.Count -gt 0) {
     }
 }
 
-# Minimal sticky-boot helper called by the scheduled task.
-# Intentionally a plain bcdedit one-liner — no PS overhead at logon.
+$installedSteamOsExe = $null
+if ($steamosExeCandidates.Count -gt 0) {
+    $installedSteamOsExe = Join-Path $InstallDir 'RestartToSteamOS.exe'
+    Copy-Item $steamosExeCandidates[0] -Destination $installedSteamOsExe -Force
+    Write-Host "      Installed: $installedSteamOsExe" -ForegroundColor Green
+
+    $sourceIco = Join-Path $PSScriptRoot 'src\RestartToSteamOS\RestartToSteamOS.ico'
+    if (Test-Path $sourceIco) {
+        Copy-Item $sourceIco -Destination (Join-Path $InstallDir 'RestartToSteamOS.ico') -Force
+    }
+}
+
+# Minimal sticky-boot helper called by the scheduled task
 Set-Content -Path (Join-Path $InstallDir 'Set-WindowsBootPriority.cmd') -Force -Value @'
 @echo off
 bcdedit /set {fwbootmgr} default {bootmgr} >nul 2>&1
 '@
 Write-Host "      Scripts installed to $InstallDir" -ForegroundColor Green
 
-# ── 3. Desktop shortcut ───────────────────────────────────────────────────
-Write-Host "`n[3/4] Creating desktop shortcut..." -ForegroundColor Yellow
-$shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Restart to Bazzite.lnk'
-$shell        = New-Object -ComObject WScript.Shell
-$sc           = $shell.CreateShortcut($shortcutPath)
+# ── 3. Desktop shortcuts ──────────────────────────────────────────────────
+Write-Host "`n[3/4] Creating desktop shortcuts..." -ForegroundColor Yellow
+$shell = New-Object -ComObject WScript.Shell
 
-if ($installedExe -and (Test-Path $installedExe)) {
-    $sc.TargetPath       = $installedExe
-    $sc.Arguments        = ''
-    $sc.WorkingDirectory = $InstallDir
-    $sc.Description      = 'Restart into Bazzite for one boot'
-    $sc.IconLocation     = "$installedExe,0"
+function Create-AppShortcut {
+    param([string]$Title, [string]$ExePath, [string]$ScriptPath, [string]$DefaultIcon)
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "$Title.lnk"
+    $sc           = $shell.CreateShortcut($shortcutPath)
+
+    if ($ExePath -and (Test-Path $ExePath)) {
+        $sc.TargetPath       = $ExePath
+        $sc.Arguments        = ''
+        $sc.WorkingDirectory = $InstallDir
+        $sc.Description      = $Title
+        $sc.IconLocation     = "$ExePath,0"
+    } else {
+        $sc.TargetPath       = 'powershell.exe'
+        $sc.Arguments        = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$ScriptPath`""
+        $sc.WorkingDirectory = $InstallDir
+        $sc.Description      = $Title
+        $sc.IconLocation     = $DefaultIcon
+    }
+    $sc.Save()
+
+    # Set Run as Administrator in shortcut header
+    $bytes       = [IO.File]::ReadAllBytes($shortcutPath)
+    $bytes[0x15] = $bytes[0x15] -bor 0x20
+    [IO.File]::WriteAllBytes($shortcutPath, $bytes)
+    Write-Host "      Created: $shortcutPath" -ForegroundColor Green
+}
+
+if ($steamosGuid -and -not $bazziteGuid) {
+    # SteamOS only system
+    Create-AppShortcut 'Restart to SteamOS' $installedSteamOsExe (Join-Path $InstallDir 'Restart-To-SteamOS.ps1') 'shell32.dll,220'
+} elseif ($bazziteGuid -and -not $steamosGuid) {
+    # Bazzite only system
+    Create-AppShortcut 'Restart to Bazzite' $installedBazziteExe (Join-Path $InstallDir 'Restart-To-Bazzite.ps1') 'shell32.dll,220'
 } else {
-    $restartScript       = Join-Path $InstallDir 'Restart-To-Bazzite.ps1'
-    $sc.TargetPath       = 'powershell.exe'
-    $sc.Arguments        = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$restartScript`""
-    $sc.WorkingDirectory = $InstallDir
-    $sc.Description      = 'Restart into Bazzite for one boot'
-    $sc.IconLocation     = 'shell32.dll,220'
+    # Both found or generic — create both
+    if ($installedBazziteExe -or (Test-Path (Join-Path $InstallDir 'Restart-To-Bazzite.ps1'))) {
+        Create-AppShortcut 'Restart to Bazzite' $installedBazziteExe (Join-Path $InstallDir 'Restart-To-Bazzite.ps1') 'shell32.dll,220'
+    }
+    if ($installedSteamOsExe -or (Test-Path (Join-Path $InstallDir 'Restart-To-SteamOS.ps1'))) {
+        Create-AppShortcut 'Restart to SteamOS' $installedSteamOsExe (Join-Path $InstallDir 'Restart-To-SteamOS.ps1') 'shell32.dll,220'
+    }
 }
-$sc.Save()
 
-# Set the "Run as Administrator" flag in the .lnk binary header (byte 0x15, bit 5)
-$bytes       = [IO.File]::ReadAllBytes($shortcutPath)
-$bytes[0x15] = $bytes[0x15] -bor 0x20
-[IO.File]::WriteAllBytes($shortcutPath, $bytes)
-Write-Host "      Created: $shortcutPath" -ForegroundColor Green
-if ($installedExe) {
-    Write-Host "      Tip: You can add '$installedExe' directly to ASUS Armoury Crate SE, Xbox App, or Winhance!" -ForegroundColor Cyan
-}
+Write-Host "      Tip: Add the .exe from '$InstallDir' to ASUS Armoury Crate SE, Xbox App, or Winhance!" -ForegroundColor Cyan
 
 # ── 4. Scheduled task ─────────────────────────────────────────────────────
 Write-Host "`n[4/4] Registering StickyWindowsBoot scheduled task..." -ForegroundColor Yellow
@@ -128,4 +169,4 @@ Write-Host "      Task '$taskName' registered." -ForegroundColor Green
 
 # Apply immediately so the current session is also covered
 Set-WindowsBootDefault
-Write-Host "`nSetup complete. Use the 'Restart to Bazzite' desktop shortcut to switch to Bazzite." -ForegroundColor Green
+Write-Host "`nSetup complete. Use your desktop shortcut or handheld launcher to switch OS." -ForegroundColor Green

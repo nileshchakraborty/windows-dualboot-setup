@@ -31,7 +31,7 @@ function Find-BazziteGuidInText {
     <#
     .SYNOPSIS
         Pure parser — returns the first UEFI GUID whose entry contains
-        'Bazzite', 'fedora', or 'shimx64.efi' (case-insensitive).
+        'Bazzite', 'fedora', 'shimx64.efi', 'steamos', or 'grubx64.efi'.
     .PARAMETER Text
         Multi-line string output of 'bcdedit /enum firmware'.
     .OUTPUTS
@@ -44,12 +44,35 @@ function Find-BazziteGuidInText {
         [string]$Text
     )
 
+    return Find-LinuxGuidInText -Text $Text
+}
+
+function Find-LinuxGuidInText {
+    <#
+    .SYNOPSIS
+        Pure parser — returns the first UEFI GUID matching Bazzite or SteamOS.
+    #>
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Text,
+        [ValidateSet('Any', 'Bazzite', 'SteamOS')]
+        [string]$Target = 'Any'
+    )
+
+    $pattern = switch ($Target) {
+        'Bazzite' { 'Bazzite|fedora|shimx64\.efi' }
+        'SteamOS' { 'steamos|steamcl\.efi|grubx64\.efi' }
+        Default   { 'Bazzite|fedora|shimx64\.efi|steamos|grubx64\.efi' }
+    }
+
     $currentGuid = $null
     foreach ($line in ($Text -split '\r?\n')) {
         if ($line -match '^identifier\s+(\{[0-9a-fA-F-]+\})') {
             $currentGuid = $matches[1]
         }
-        if ($line -imatch 'Bazzite|fedora|shimx64\.efi' -and $null -ne $currentGuid) {
+        if ($line -imatch $pattern -and $null -ne $currentGuid) {
             return $currentGuid
         }
     }
@@ -59,21 +82,41 @@ function Find-BazziteGuidInText {
 function Get-BazziteBootGuid {
     <#
     .SYNOPSIS
-        Returns the UEFI GUID for the Bazzite firmware boot entry.
-    .OUTPUTS
-        String GUID, or $null if no Bazzite entry is present.
-    .NOTES
-        Throws if bcdedit itself fails (not running as Administrator,
-        EFI variables unsupported, etc.).
+        Returns the UEFI GUID for the Bazzite/SteamOS firmware boot entry.
     #>
     [OutputType([string])]
     param()
+
+    return Get-LinuxBootGuid -Target 'Bazzite'
+}
+
+function Get-SteamOSBootGuid {
+    <#
+    .SYNOPSIS
+        Returns the UEFI GUID for the SteamOS firmware boot entry.
+    #>
+    [OutputType([string])]
+    param()
+
+    return Get-LinuxBootGuid -Target 'SteamOS'
+}
+
+function Get-LinuxBootGuid {
+    <#
+    .SYNOPSIS
+        Returns the UEFI GUID for a Bazzite or SteamOS firmware boot entry.
+    #>
+    [OutputType([string])]
+    param(
+        [ValidateSet('Any', 'Bazzite', 'SteamOS')]
+        [string]$Target = 'Any'
+    )
 
     $r = Invoke-BcdEdit '/enum', 'firmware'
     if ($r.ExitCode -ne 0) {
         throw "bcdedit /enum firmware failed (exit $($r.ExitCode)): $($r.Output -join ' ')"
     }
-    return Find-BazziteGuidInText ($r.Output -join "`n")
+    return Find-LinuxGuidInText -Text ($r.Output -join "`n") -Target $Target
 }
 
 function Set-WindowsBootDefault {
@@ -98,13 +141,37 @@ function Set-WindowsBootDefault {
 function Set-BazziteBootNext {
     <#
     .SYNOPSIS
-        Arms Bazzite as the one-time UEFI next-boot entry (bootsequence).
-    .PARAMETER Guid
-        Bazzite firmware GUID returned by Get-BazziteBootGuid.
-    .NOTES
-        Uses 'bootsequence' (not 'default') so the change is consumed after
-        a single boot and Windows remains the persistent default.
-        Requires Administrator. Supports -WhatIf.
+        Arms Bazzite/SteamOS as the one-time UEFI next-boot entry (bootsequence).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [ValidatePattern('^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$')]
+        [string]$Guid
+    )
+
+    Set-LinuxBootNext -Guid $Guid
+}
+
+function Set-SteamOSBootNext {
+    <#
+    .SYNOPSIS
+        Arms SteamOS as the one-time UEFI next-boot entry (bootsequence).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [ValidatePattern('^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$')]
+        [string]$Guid
+    )
+
+    Set-LinuxBootNext -Guid $Guid
+}
+
+function Set-LinuxBootNext {
+    <#
+    .SYNOPSIS
+        Arms a Linux (Bazzite/SteamOS) UEFI entry as the one-time boot sequence.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -116,7 +183,7 @@ function Set-BazziteBootNext {
     if ($PSCmdlet.ShouldProcess($Guid, 'Set as one-time UEFI next boot')) {
         $r = Invoke-BcdEdit '/set', '{fwbootmgr}', 'bootsequence', $Guid
         if ($r.ExitCode -ne 0) {
-            throw "Failed to set Bazzite as one-time boot target (exit $($r.ExitCode)): $($r.Output -join ' ')"
+            throw "Failed to set boot target (exit $($r.ExitCode)): $($r.Output -join ' ')"
         }
     }
 }
@@ -135,6 +202,7 @@ function Test-Administrator {
 }
 
 Export-ModuleMember -Function `
-    Find-BazziteGuidInText, Get-BazziteBootGuid,
-    Set-WindowsBootDefault, Set-BazziteBootNext,
+    Find-BazziteGuidInText, Find-LinuxGuidInText, `
+    Get-BazziteBootGuid, Get-SteamOSBootGuid, Get-LinuxBootGuid, `
+    Set-WindowsBootDefault, Set-BazziteBootNext, Set-SteamOSBootNext, Set-LinuxBootNext, `
     Test-Administrator

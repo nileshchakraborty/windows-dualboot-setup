@@ -13,6 +13,7 @@ namespace RestartToBazzite
         public string Guid { get; set; }
         public string Description { get; set; }
         public string Path { get; set; }
+        public string OsName { get; set; }
     }
 
     public static class BootFinder
@@ -31,6 +32,7 @@ namespace RestartToBazzite
             string currentGuid = null;
             string currentDesc = null;
             string currentPath = null;
+            string currentOsName = null;
             bool isTargetCandidate = false;
 
             string[] lines = output.Split(new string[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
@@ -44,7 +46,13 @@ namespace RestartToBazzite
                     // If previous entry was a match and a valid UUID, return it
                     if (isTargetCandidate && !string.IsNullOrEmpty(currentGuid) && GuidRegex.IsMatch(currentGuid))
                     {
-                        return new BootEntry { Guid = currentGuid, Description = currentDesc, Path = currentPath };
+                        return new BootEntry
+                        {
+                            Guid = currentGuid,
+                            Description = currentDesc,
+                            Path = currentPath,
+                            OsName = currentOsName ?? "Linux"
+                        };
                     }
 
                     // Start new entry
@@ -52,6 +60,7 @@ namespace RestartToBazzite
                     currentGuid = parts.Length >= 2 ? parts[1].Trim() : null;
                     currentDesc = null;
                     currentPath = null;
+                    currentOsName = null;
                     isTargetCandidate = false;
                     continue;
                 }
@@ -65,21 +74,50 @@ namespace RestartToBazzite
                     currentPath = trimmed.Length >= 4 ? trimmed.Substring(4).Trim() : "";
                 }
 
+                // Check for SteamOS markers
+                if (line.IndexOf("steamos", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    line.IndexOf("steamcl.efi", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    isTargetCandidate = true;
+                    if (string.IsNullOrEmpty(currentOsName))
+                    {
+                        currentOsName = "SteamOS";
+                    }
+                }
+
                 // Check for Bazzite / Fedora / shim bootloader markers
                 if (line.IndexOf("bazzite", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     line.IndexOf("fedora", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    line.IndexOf("shimx64.efi", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    line.IndexOf("grubx64.efi", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    line.IndexOf("steamos", StringComparison.OrdinalIgnoreCase) >= 0)
+                    line.IndexOf("shimx64.efi", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     isTargetCandidate = true;
+                    if (string.IsNullOrEmpty(currentOsName))
+                    {
+                        currentOsName = "Bazzite";
+                    }
+                }
+
+                // Generic Linux grub loader marker
+                if (line.IndexOf("grubx64.efi", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    isTargetCandidate = true;
+                    if (string.IsNullOrEmpty(currentOsName))
+                    {
+                        currentOsName = "Linux";
+                    }
                 }
             }
 
             // Check last entry in output
             if (isTargetCandidate && !string.IsNullOrEmpty(currentGuid) && GuidRegex.IsMatch(currentGuid))
             {
-                return new BootEntry { Guid = currentGuid, Description = currentDesc, Path = currentPath };
+                return new BootEntry
+                {
+                    Guid = currentGuid,
+                    Description = currentDesc,
+                    Path = currentPath,
+                    OsName = currentOsName ?? "Linux"
+                };
             }
 
             return null;
@@ -93,8 +131,6 @@ namespace RestartToBazzite
 
     public static class Program
     {
-        private const string AppTitle = "Restart to Bazzite";
-
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AttachConsole(int dwProcessId);
         private const int ATTACH_PARENT_PROCESS = -1;
@@ -104,6 +140,9 @@ namespace RestartToBazzite
         public static int Main(string[] args)
         {
             _hasConsole = AttachConsole(ATTACH_PARENT_PROCESS);
+
+            string exeName = Path.GetFileNameWithoutExtension(GetExecutablePath()).ToLowerInvariant();
+            string defaultTitle = exeName.Contains("steamos") ? "Restart to SteamOS" : "Restart to Bazzite";
 
             // Parse optional command-line flags
             bool checkOnly = false;
@@ -123,15 +162,15 @@ namespace RestartToBazzite
                 else if (lower == "--help" || lower == "-h" || lower == "/?" || lower == "-?")
                 {
                     string helpText =
-                        "Usage: RestartToBazzite.exe [options]\n\n" +
+                        string.Format("Usage: {0}.exe [options]\n\n", exeName) +
                         "Options:\n" +
-                        "  (no args)    One-click restart directly into Bazzite (default)\n" +
-                        "  --check      Check UEFI firmware for Bazzite entry without rebooting\n" +
+                        "  (no args)    One-click restart directly into Bazzite or SteamOS (default)\n" +
+                        "  --check      Check UEFI firmware for Bazzite/SteamOS entry without rebooting\n" +
                         "  --confirm    Prompt with confirmation dialog before restarting\n" +
                         "  --help       Show this help message\n\n" +
-                        "Ideal for pinning to ASUS Armoury Crate SE, Xbox App, or Winhance.";
+                        "Ideal for pinning to ASUS Armoury Crate SE, Xbox App, or Winhance on ROG Ally, Legion Go, or Steam Deck.";
 
-                    ShowMessage(helpText, AppTitle, MessageBoxIcon.Information);
+                    ShowMessage(helpText, defaultTitle, MessageBoxIcon.Information);
                     return 0;
                 }
             }
@@ -159,17 +198,20 @@ namespace RestartToBazzite
                 }
             }
 
-            // 2. Discover Bazzite UEFI Boot Entry
-            BootEntry bazzite = FindBazziteBootEntry();
-            if (bazzite == null || string.IsNullOrEmpty(bazzite.Guid))
+            // 2. Discover Bazzite or SteamOS UEFI Boot Entry
+            BootEntry targetOs = FindBazziteOrSteamOsBootEntry();
+            string appTitle = targetOs != null && !string.IsNullOrEmpty(targetOs.OsName)
+                ? string.Format("Restart to {0}", targetOs.OsName)
+                : defaultTitle;
+
+            if (targetOs == null || string.IsNullOrEmpty(targetOs.Guid))
             {
                 string errorMsg =
-                    "Bazzite boot entry was not found in UEFI firmware.\n\n" +
-                    "Please verify that Bazzite is installed on the device and that its " +
-                    "firmware entry contains 'Bazzite', 'fedora', or 'shimx64.efi'.\n\n" +
+                    "Neither Bazzite nor SteamOS boot entry was found in UEFI firmware.\n\n" +
+                    "Please verify that Bazzite or SteamOS is installed on the device.\n\n" +
                     "Run 'bcdedit /enum firmware' in an elevated terminal to inspect entries.";
 
-                ShowMessage(errorMsg, AppTitle, MessageBoxIcon.Error);
+                ShowMessage(errorMsg, appTitle, MessageBoxIcon.Error);
                 return 1;
             }
 
@@ -177,12 +219,13 @@ namespace RestartToBazzite
             if (checkOnly)
             {
                 string infoMsg = string.Format(
-                    "Bazzite UEFI Boot Entry Detected:\n\nGUID: {0}\nDescription: {1}\nPath: {2}",
-                    bazzite.Guid,
-                    string.IsNullOrEmpty(bazzite.Description) ? "Bazzite" : bazzite.Description,
-                    string.IsNullOrEmpty(bazzite.Path) ? "(firmware default)" : bazzite.Path);
+                    "{0} UEFI Boot Entry Detected:\n\nGUID: {1}\nDescription: {2}\nPath: {3}",
+                    targetOs.OsName,
+                    targetOs.Guid,
+                    string.IsNullOrEmpty(targetOs.Description) ? targetOs.OsName : targetOs.Description,
+                    string.IsNullOrEmpty(targetOs.Path) ? "(firmware default)" : targetOs.Path);
 
-                ShowMessage(infoMsg, AppTitle, MessageBoxIcon.Information);
+                ShowMessage(infoMsg, appTitle, MessageBoxIcon.Information);
                 return 0;
             }
 
@@ -190,8 +233,8 @@ namespace RestartToBazzite
             if (askConfirm)
             {
                 DialogResult dr = MessageBox.Show(
-                    string.Format("Restart system into Bazzite now?\n\nTarget GUID: {0}", bazzite.Guid),
-                    AppTitle,
+                    string.Format("Restart system into {0} now?\n\nTarget GUID: {1}", targetOs.OsName, targetOs.Guid),
+                    appTitle,
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question);
 
@@ -201,14 +244,14 @@ namespace RestartToBazzite
                 }
             }
 
-            // 5. Arm Bazzite as one-time boot target (bootsequence)
+            // 5. Arm Bazzite / SteamOS as one-time boot target (bootsequence)
             try
             {
                 string bcdeditPath = Path.Combine(Environment.SystemDirectory, "bcdedit.exe");
                 ProcessStartInfo bcd = new ProcessStartInfo
                 {
                     FileName = bcdeditPath,
-                    Arguments = BootFinder.BuildBcdEditArguments(bazzite.Guid),
+                    Arguments = BootFinder.BuildBcdEditArguments(targetOs.Guid),
                     CreateNoWindow = true,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
@@ -225,7 +268,7 @@ namespace RestartToBazzite
                     {
                         string err = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : stdout.Trim();
                         string failMsg = string.Format("Failed to set UEFI bootsequence (Exit code {0}):\n\n{1}", p.ExitCode, err);
-                        ShowMessage(failMsg, AppTitle, MessageBoxIcon.Error);
+                        ShowMessage(failMsg, appTitle, MessageBoxIcon.Error);
                         return p.ExitCode;
                     }
                 }
@@ -244,8 +287,8 @@ namespace RestartToBazzite
             }
             catch (Exception ex)
             {
-                string exMsg = "Error executing restart to Bazzite:\n\n" + ex.Message;
-                ShowMessage(exMsg, AppTitle, MessageBoxIcon.Error);
+                string exMsg = string.Format("Error executing restart to {0}:\n\n{1}", targetOs.OsName, ex.Message);
+                ShowMessage(exMsg, appTitle, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -285,7 +328,7 @@ namespace RestartToBazzite
             }
         }
 
-        private static BootEntry FindBazziteBootEntry()
+        private static BootEntry FindBazziteOrSteamOsBootEntry()
         {
             try
             {

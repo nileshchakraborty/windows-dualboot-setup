@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Multi-target net48 (zero runtime dependencies on Windows 10/11) and net8.0-windows -->
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>RestartToSteamOS.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>RestartToSteamOS</AssemblyName>
+    <RootNamespace>RestartToSteamOS</RootNamespace>
+    <Nullable>disable</Nullable>
+    
+    <!-- Assembly Metadata -->
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Title>Restart to SteamOS</Title>
+    <Description>One-click restart into SteamOS / Bazzite for ROG Ally, Legion Go, Steam Deck, and handheld devices</Description>
+    <Company>Nilesh Chakraborty</Company>
+    <Product>Restart to SteamOS</Product>
+    <Copyright>Copyright © 2026 Nilesh Chakraborty</Copyright>
+
+    <!-- High DPI settings for modern .NET -->
+    <ApplicationHighDpiMode Condition="'$(TargetFramework)' == 'net8.0-windows'">PerMonitorV2</ApplicationHighDpiMode>
+    <NoWarn Condition="'$(TargetFramework)' == 'net8.0-windows'">$(NoWarn);WFAC010</NoWarn>
+
+    <!-- Single file publish settings when targeting net8.0-windows -->
+    <PublishSingleFile Condition="'$(TargetFramework)' == 'net8.0-windows'">true</PublishSingleFile>
+    <SelfContained Condition="'$(TargetFramework)' == 'net8.0-windows'">false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(TargetFramework)' == 'net8.0-windows'">true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\RestartToBazzite\Program.cs" Link="Program.cs" />
+    <Content Include="RestartToSteamOS.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

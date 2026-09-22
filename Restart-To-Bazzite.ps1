@@ -14,11 +14,14 @@
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot\lib\DualBoot.psm1" -Force
 
-Write-Host 'Searching for Bazzite UEFI entry...' -ForegroundColor Cyan
+Write-Host 'Searching for Bazzite / SteamOS UEFI entry...' -ForegroundColor Cyan
 $guid = Get-BazziteBootGuid
+if (-not $guid) {
+    $guid = Get-LinuxBootGuid
+}
 
 if (-not $guid) {
-    Write-Error 'Bazzite UEFI boot entry not found. Verify Bazzite is installed and that Install.ps1 has been run.'
+    Write-Error 'Bazzite or SteamOS UEFI boot entry not found. Verify your Linux gaming OS is installed and that Install.ps1 has been run.'
     exit 1
 }
 

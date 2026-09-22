@@ -1,4 +1,4 @@
-name: Build & Test RestartToBazzite
+name: Build & Test DualBoot Launchers
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build and Test Executable
+    name: Build and Test Executables
     runs-on: windows-latest
 
     steps:
@@ -31,10 +31,10 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RestartToBazzite-binaries
+          name: DualBoot-binaries
           path: |
-            src/RestartToBazzite/bin/Release/**/RestartToBazzite.exe
-            src/RestartToBazzite/RestartToBazzite.ico
+            src/**/bin/Release/**/RestartTo*.exe
+            src/**/*.ico
 
       - name: Release Assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -42,6 +42,8 @@ jobs:
         with:
           files: |
             src/RestartToBazzite/bin/Release/net48/RestartToBazzite.exe
+            src/RestartToSteamOS/bin/Release/net48/RestartToSteamOS.exe
             src/RestartToBazzite/RestartToBazzite.ico
+            src/RestartToSteamOS/RestartToSteamOS.ico
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

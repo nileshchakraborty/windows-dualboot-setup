@@ -39,6 +39,7 @@ description             Bazzite
             Assert.AreEqual("{7f9fafdd-7fe2-11f1-8f8e-806e6f6e6963}", entry.Guid);
             Assert.AreEqual("Bazzite", entry.Description);
             Assert.AreEqual(@"\EFI\fedora\shimx64.efi", entry.Path);
+            Assert.AreEqual("Bazzite", entry.OsName);
         }
 
         [TestMethod]
@@ -53,6 +54,7 @@ description             Linux
 
             Assert.IsNotNull(entry);
             Assert.AreEqual("{aaaa1111-0000-0000-0000-000000000000}", entry.Guid);
+            Assert.AreEqual("Bazzite", entry.OsName);
         }
 
         [TestMethod]
@@ -67,6 +69,7 @@ description             UEFI OS
 
             Assert.IsNotNull(entry);
             Assert.AreEqual("{bbbb2222-0000-0000-0000-000000000000}", entry.Guid);
+            Assert.AreEqual("Bazzite", entry.OsName);
         }
 
         [TestMethod]
@@ -82,6 +85,7 @@ description             SteamOS
             Assert.IsNotNull(entry);
             Assert.AreEqual("{cccc3333-0000-0000-0000-000000000000}", entry.Guid);
             Assert.AreEqual("SteamOS", entry.Description);
+            Assert.AreEqual("SteamOS", entry.OsName);
         }
 
         [TestMethod]
