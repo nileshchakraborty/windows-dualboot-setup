@@ -1,4 +1,4 @@
-# Windows Dual-Boot Setup — ROG Xbox Ally X
+# Windows Dual-Boot Setup
 
 > **Problem:** the UEFI firmware defaults to whichever OS booted last, so waking
 > from sleep/hibernate in Windows can land you in Bazzite unexpectedly.
