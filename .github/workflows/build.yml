@@ -1,4 +1,4 @@
-name: Build RestartToBazzite
+name: Build & Test RestartToBazzite
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build Executable
+    name: Build and Test Executable
     runs-on: windows-latest
 
     steps:
@@ -24,6 +24,9 @@ jobs:
 
       - name: Build Solution (Release)
         run: dotnet build RestartToBazzite.sln -c Release
+
+      - name: Run Unit Tests
+        run: dotnet test RestartToBazzite.sln -c Release --verbosity normal --no-build
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

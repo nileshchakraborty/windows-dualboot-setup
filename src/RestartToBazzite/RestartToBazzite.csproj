@@ -21,6 +21,10 @@
     <Product>Restart to Bazzite</Product>
     <Copyright>Copyright © 2026 Nilesh Chakraborty</Copyright>
 
+    <!-- High DPI settings for modern .NET -->
+    <ApplicationHighDpiMode Condition="'$(TargetFramework)' == 'net8.0-windows'">PerMonitorV2</ApplicationHighDpiMode>
+    <NoWarn Condition="'$(TargetFramework)' == 'net8.0-windows'">$(NoWarn);WFAC010</NoWarn>
+
     <!-- Single file publish settings when targeting net8.0-windows -->
     <PublishSingleFile Condition="'$(TargetFramework)' == 'net8.0-windows'">true</PublishSingleFile>
     <SelfContained Condition="'$(TargetFramework)' == 'net8.0-windows'">false</SelfContained>
