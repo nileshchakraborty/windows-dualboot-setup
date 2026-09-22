@@ -1,9 +1,14 @@
 # Windows Dual-Boot Setup
 
-> **Problem:** the UEFI firmware defaults to whichever OS booted last, so waking
-> from sleep/hibernate in Windows can land you in Bazzite unexpectedly.
-> These scripts pin Windows as the persistent default and give you a one-click
-> desktop shortcut to boot Bazzite on demand.
+> **One-click restart into Bazzite from handheld launchers + persistent sticky Windows UEFI boot priority.**
+> 
+> **Problem:** On dual-boot systems, the UEFI firmware defaults to whichever OS booted last, so waking from sleep/hibernate or rebooting in Windows can land you in Bazzite unexpectedly. Additionally, handheld frontends (Armoury Crate, Xbox, Winhance) require a clean `.exe` with elevated privileges rather than raw scripts.
+> 
+> **Solution:** This project provides:
+> 1. **`RestartToBazzite.exe`** — A standalone C# GUI application (built via `RestartToBazzite.sln`) with embedded icon and automatic UAC elevation, ready to attach to ASUS Armoury Crate SE, Xbox App, Winhance, or your desktop.
+> 2. **`StickyWindowsBoot`** — A lightweight background task that keeps Windows Boot Manager as the persistent UEFI default.
+> 
+> **Companion Project:** Works together with [`restart-to-windows`](https://github.com/nileshchakraborty/restart-to-windows) (Decky Loader plugin) for seamless two-way switching between Windows and Bazzite / SteamOS.
 
 ---
 
@@ -11,18 +16,17 @@
 
 | Requirement | Details |
 |---|---|
-| Hardware | ROG Xbox Ally X (or any UEFI dual-boot PC) |
+| Hardware | ROG Ally, ROG Ally X, Lenovo Legion Go, Steam Deck, or any UEFI dual-boot PC |
 | Firmware mode | **UEFI only** — CSM / Legacy boot must be **off** |
 | Bazzite | Already installed with its own UEFI firmware entry |
 | Windows | 10 or 11, **Administrator** account |
 | PowerShell | 5.1+ (built into Windows — no extra install) |
 | `bcdedit.exe` | Built into Windows — no extra install |
 
-> **No third-party software, package manager, or internet connection is required.**
+> **No third-party runtime or package manager is required.** (Compiled `net48` binary runs natively on all Windows 10/11 installations).
 
-The installer auto-detects Bazzite by matching any UEFI entry whose `path` or
-`description` contains **`Bazzite`**, **`fedora`**, or **`shimx64.efi`** —
-the labels used by Bazzite's standard GRUB/shim bootloader.
+The tool auto-detects Bazzite by matching any UEFI entry whose `path` or
+`description` contains **`Bazzite`**, **`fedora`**, **`shimx64.efi`**, **`grubx64.efi`**, or **`steamos`**.
 
 ---
 
